@@ -1,0 +1,5 @@
+{
+  "name": "RDSCHT Social",
+  "description": "A modern social application with real-time messaging, friend discovery, and user profiles.",
+  "requestFramePermissions": ["camera", "microphone", "geolocation"]
+}

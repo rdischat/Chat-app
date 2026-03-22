@@ -1,0 +1,5 @@
+{
+	"appId": "com.chatapp.app",
+	"appName": "Chat App",
+	"webDir": "dist"
+}

@@ -1,0 +1,242 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId} (Firebase Auth UID)
+    // Fields:
+    //   - firstName: string (required) - The user's first name
+    //   - lastName: string (required) - The user's last name
+    //   - userId: string (required) - Unique identifier chosen by the user
+    //   - phone: string (required) - The user's phone number
+    //   - email: string (required) - The user's email address
+    //   - createdAt: timestamp (required) - When the profile was created
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+             (request.auth.token.email == "rdischat@gmail.com");
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isRecent(time) {
+      return time > request.time - duration.value(5, 'm') &&
+             time < request.time + duration.value(5, 'm');
+    }
+
+    // Domain Validators
+    function isValidUser(data) {
+      return hasRequiredFields(['firstName', 'lastName', 'userId', 'phone', 'email', 'createdAt']) &&
+             hasOnlyAllowedFields(['firstName', 'lastName', 'userId', 'phone', 'email', 'createdAt', 'avatar', 'bio', 'location', 'website', 'achievements', 'activity']) &&
+             data.firstName is string && data.firstName.size() > 0 && data.firstName.size() <= 50 &&
+             data.lastName is string && data.lastName.size() > 0 && data.lastName.size() <= 50 &&
+             data.userId is string && data.userId.size() >= 3 && data.userId.size() <= 30 &&
+             data.phone is string && data.phone.size() >= 10 && data.phone.size() <= 20 &&
+             isValidEmail(data.email) &&
+             data.createdAt is timestamp &&
+             (!('avatar' in data) || (data.avatar is string && data.avatar.size() < 2097152)) && // Max 2MB for base64
+             (!('bio' in data) || (data.bio is string && data.bio.size() <= 500)) &&
+             (!('location' in data) || (data.location is string && data.location.size() <= 100)) &&
+             (!('website' in data) || (data.website is string && data.website.size() <= 200)) &&
+             (!('achievements' in data) || (data.achievements is list)) &&
+             (!('activity' in data) || (data.activity is list));
+    }
+
+    function isValidFriendRequest(data) {
+      return hasRequiredFields(['fromUid', 'toUid', 'status', 'createdAt']) &&
+             hasOnlyAllowedFields(['fromUid', 'toUid', 'status', 'createdAt']) &&
+             data.fromUid is string &&
+             data.toUid is string &&
+             data.status in ['pending', 'accepted', 'declined'] &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidFriend(data) {
+      return hasRequiredFields(['uid', 'addedAt']) &&
+             hasOnlyAllowedFields(['uid', 'addedAt']) &&
+             data.uid is string &&
+             data.addedAt is timestamp;
+    }
+
+    function isValidChat(data) {
+      return hasRequiredFields(['participants', 'updatedAt']) &&
+             hasOnlyAllowedFields(['participants', 'updatedAt', 'lastMessage']) &&
+             data.participants is list &&
+             data.participants.size() >= 2 &&
+             data.updatedAt is timestamp &&
+             (!('lastMessage' in data) || (data.lastMessage is string && data.lastMessage.size() <= 1000));
+    }
+
+    function isValidMessage(data) {
+      return hasRequiredFields(['text', 'senderId', 'createdAt']) &&
+             hasOnlyAllowedFields(['text', 'senderId', 'createdAt']) &&
+             data.text is string && data.text.size() > 0 && data.text.size() <= 2000 &&
+             data.senderId is string &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidCommunity(data) {
+      return hasRequiredFields(['name', 'creatorId', 'createdAt']) &&
+             hasOnlyAllowedFields(['name', 'description', 'creatorId', 'avatar', 'memberCount', 'createdAt']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             (data.creatorId == request.auth.uid || (resource != null && data.creatorId == resource.data.creatorId)) &&
+             data.createdAt is timestamp &&
+             (!('description' in data) || (data.description is string && data.description.size() <= 1000)) &&
+             (!('avatar' in data) || (data.avatar is string && data.avatar.size() < 2097152)) &&
+             (!('memberCount' in data) || (data.memberCount is number));
+    }
+
+    function isValidCommunityMember(data) {
+      return hasRequiredFields(['uid', 'role', 'joinedAt']) &&
+             hasOnlyAllowedFields(['uid', 'role', 'joinedAt']) &&
+             data.uid == request.auth.uid &&
+             data.role in ['admin', 'moderator', 'member'] &&
+             data.joinedAt is timestamp;
+    }
+
+    function isValidCommunityPost(data) {
+      return hasRequiredFields(['text', 'authorId', 'createdAt']) &&
+             hasOnlyAllowedFields(['text', 'authorId', 'authorName', 'createdAt', 'likes']) &&
+             data.text is string && data.text.size() > 0 && data.text.size() <= 5000 &&
+             data.authorId == request.auth.uid &&
+             data.createdAt is timestamp &&
+             (!('authorName' in data) || (data.authorName is string)) &&
+             (!('likes' in data) || (data.likes is number));
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      // Users can read any profile to allow searching, but sensitive info should be protected
+      // In a real app, we'd use a separate public_profiles collection
+      allow get: if isAuthenticated();
+      
+      // Allow listing users for search
+      allow list: if isAuthenticated();
+      
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      
+      allow update: if (isOwner(userId) || isAdmin()) && 
+                      isValidUser(request.resource.data) &&
+                      (isAdmin() || request.resource.data.userId == resource.data.userId) &&
+                      request.resource.data.email == resource.data.email &&
+                      request.resource.data.createdAt == resource.data.createdAt;
+
+      match /friends/{friendId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated();
+      }
+    }
+
+    match /friendRequests/{requestId} {
+      // Users can see requests they sent or received
+      allow read: if isAuthenticated();
+      
+      // Users can create requests from themselves
+      allow create: if isAuthenticated() && 
+                      request.resource.data.fromUid == request.auth.uid &&
+                      request.resource.data.status == 'pending';
+      
+      // Users can update requests they are involved in (e.g., accept/decline)
+      allow update: if isAuthenticated() && 
+                      (request.auth.uid == resource.data.fromUid || request.auth.uid == resource.data.toUid);
+      
+      allow delete: if isAuthenticated() && 
+                      (request.auth.uid == resource.data.fromUid || request.auth.uid == resource.data.toUid);
+    }
+
+    match /chats/{chatId} {
+      // Users can only see chats they are participating in
+      allow read: if isAuthenticated() && request.auth.uid in resource.data.participants;
+      
+      // Users can create a chat if they are one of the participants
+      allow create: if isAuthenticated() && 
+                      request.auth.uid in request.resource.data.participants &&
+                      isValidChat(request.resource.data);
+      
+      // Users can update a chat if they are a participant (e.g., updating lastMessage)
+      allow update: if isAuthenticated() && 
+                      request.auth.uid in resource.data.participants &&
+                      isValidChat(request.resource.data);
+
+      match /messages/{messageId} {
+        // Users can only see messages in chats they are participating in
+        allow read: if isAuthenticated() && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+        
+        // Users can only send messages to chats they are participating in
+        allow create: if isAuthenticated() && 
+                        request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants &&
+                        request.resource.data.senderId == request.auth.uid &&
+                        isValidMessage(request.resource.data);
+      }
+    }
+
+    match /communities/{communityId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidCommunity(request.resource.data);
+      allow update: if isAuthenticated() && 
+                      (resource.data.creatorId == request.auth.uid || isAdmin() || 
+                       get(/databases/$(database)/documents/communities/$(communityId)/members/$(request.auth.uid)).data.role == 'admin' ||
+                       (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberCount', 'likes']))) &&
+                      isValidCommunity(request.resource.data);
+      allow delete: if isAuthenticated() && (resource.data.creatorId == request.auth.uid || isAdmin());
+
+      match /members/{memberId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && memberId == request.auth.uid && isValidCommunityMember(request.resource.data);
+        allow update: if isAuthenticated() && 
+                        (get(/databases/$(database)/documents/communities/$(communityId)).data.creatorId == request.auth.uid || 
+                         get(/databases/$(database)/documents/communities/$(communityId)/members/$(request.auth.uid)).data.role == 'admin') &&
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role']) &&
+                        request.resource.data.role in ['admin', 'moderator', 'member'];
+        allow delete: if isAuthenticated() && (memberId == request.auth.uid || get(/databases/$(database)/documents/communities/$(communityId)).data.creatorId == request.auth.uid || get(/databases/$(database)/documents/communities/$(communityId)/members/$(request.auth.uid)).data.role == 'admin');
+      }
+
+      match /posts/{postId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && 
+                        exists(/databases/$(database)/documents/communities/$(communityId)/members/$(request.auth.uid)) &&
+                        isValidCommunityPost(request.resource.data);
+        allow update: if isAuthenticated() && 
+                        (resource.data.authorId == request.auth.uid || 
+                         get(/databases/$(database)/documents/communities/$(communityId)).data.creatorId == request.auth.uid ||
+                         get(/databases/$(database)/documents/communities/$(communityId)/members/$(request.auth.uid)).data.role in ['admin', 'moderator'] ||
+                         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes']));
+        allow delete: if isAuthenticated() && 
+                        (resource.data.authorId == request.auth.uid || 
+                         get(/databases/$(database)/documents/communities/$(communityId)).data.creatorId == request.auth.uid ||
+                         get(/databases/$(database)/documents/communities/$(communityId)/members/$(request.auth.uid)).data.role in ['admin', 'moderator']);
+      }
+    }
+  }
+}

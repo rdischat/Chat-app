@@ -1,11 +1,58 @@
-<div align="center">
+# 💬 Chat App
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+Современное кроссплатформенное приложение для общения, созданное с использованием React, Firebase и Capacitor. Приложение работает как в браузере (PWA), так и в виде нативного Android-приложения.
 
-  <h1>Built with AI Studio</h2>
+## ✨ Основные возможности
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+- **Авторизация:** Вход по Email/Паролю и быстрая авторизация через GitHub.
+- **Чаты в реальном времени:** Мгновенная доставка сообщений благодаря Firebase Firestore.
+- **Обмен медиа:** Отправка фотографий и файлов любых форматов.
+- **Социальные функции:** Поиск пользователей по ID, добавление в друзья, управление заявками.
+- **Сообщества:** Создание групповых чатов с гибкой системой ролей (Админ, Модератор, Участник).
+- **Кастомизация:** Настройка профиля, установка аватарок, статусы "в сети".
+- **Кроссплатформенность:** Поддержка установки на рабочий стол (PWA) и готовая сборка под Android (APK).
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+## 🛠 Технологии
 
-</div>
+- **Frontend:** React 18, TypeScript, Tailwind CSS, Framer Motion, Lucide Icons.
+- **Backend/BaaS:** Firebase (Auth, Firestore, Storage).
+- **Mobile:** Capacitor (для сборки Android APK).
+- **PWA:** Service Workers, Web App Manifest.
+
+## 🚀 Запуск проекта локально
+
+1. Клонируйте репозиторий:
+   ```bash
+   git clone https://github.com/ВАШ_ЛОГИН/chat-app.git
+   cd chat-app
+   ```
+
+2. Установите зависимости:
+   ```bash
+   npm install
+   ```
+
+3. Настройте Firebase:
+   Убедитесь, что у вас есть файл `firebase-applet-config.json` в корне проекта с вашими ключами Firebase.
+
+4. Запустите сервер для разработки:
+   ```bash
+   npm run dev
+   ```
+
+## 📱 Сборка для Android (Capacitor)
+
+1. Соберите веб-версию:
+   ```bash
+   npm run build
+   ```
+
+2. Синхронизируйте файлы с Android-проектом:
+   ```bash
+   npx cap sync android
+   ```
+
+3. Откройте проект в Android Studio для сборки APK:
+   ```bash
+   npx cap open android
+   ```
